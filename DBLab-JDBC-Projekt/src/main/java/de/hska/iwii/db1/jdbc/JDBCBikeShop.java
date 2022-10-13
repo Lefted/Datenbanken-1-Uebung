@@ -4,11 +4,16 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import de.hska.iwii.db1.jdbc.bootstrap.OracleConnectionWrapper;
+import de.hska.iwii.db1.jdbc.bootstrap.OracleConnectionWrapperException;
+import de.hska.iwii.db1.jdbc.utils.DBUtils;
 
 /**
  * Diese Klasse ist die Basis für Ihre Lösung. Mit Hilfe der Methode
@@ -18,6 +23,31 @@ import org.slf4j.LoggerFactory;
 public class JDBCBikeShop {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(JDBCBikeShop.class);
+
+	private static final JDBCBikeShop INSTANCE = new JDBCBikeShop();
+
+	public static void main(String[] args) {
+		try (Connection con = OracleConnectionWrapper.getInstance().connect()) {
+			INSTANCE.logJDBCDatabaseInfo(con);
+			INSTANCE.logJDBCDriverInfo(con);
+		} catch (SQLException e) {
+			DBUtils.dumpSQLException(e);
+		} catch (OracleConnectionWrapperException e) {
+			LOGGER.error("Oracle connection error: ", e);
+		} finally {
+			OracleConnectionWrapper.getInstance().closeOracleSSHTunnel();
+		}
+	}
+
+	private void logJDBCDatabaseInfo(Connection con) throws SQLException {
+		DatabaseMetaData metaData = con.getMetaData();
+		LOGGER.info("Database: {} {}", metaData.getDatabaseProductName(), metaData.getDatabaseProductVersion());
+	}
+
+	private void logJDBCDriverInfo(Connection con) throws SQLException {
+		DatabaseMetaData metaData = con.getMetaData();
+		LOGGER.info("Database driver: {} {}", metaData.getDriverName(), metaData.getDriverVersion());
+	}
 
 	/** @formatter:off
      * Stellt die Datenbank aus der SQL-Datei wieder her.
@@ -32,7 +62,8 @@ public class JDBCBikeShop {
      * 					Bike-Datenbank wiederhergestellt werden soll. 
      * @formatter:on
      */
-	public void reInitializeDB(Connection connection) {
+	@SuppressWarnings("unused")
+	private void reInitializeDB(Connection connection) { // SONAR
 		try (Statement statement = connection.createStatement()) {
 			LOGGER.info("Initializing DB");
 			connection.setAutoCommit(true);
