@@ -5,8 +5,12 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
+import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +34,8 @@ public class JDBCBikeShop {
 		try (Connection con = OracleConnectionWrapper.getInstance().connect()) {
 			INSTANCE.logJDBCDatabaseInfo(con);
 			INSTANCE.logJDBCDriverInfo(con);
+			INSTANCE.selectPersonal(con);
+			INSTANCE.selectKunden(con);
 		} catch (SQLException e) {
 			DBUtils.dumpSQLException(e);
 		} catch (OracleConnectionWrapperException e) {
@@ -47,6 +53,122 @@ public class JDBCBikeShop {
 	private void logJDBCDriverInfo(Connection con) throws SQLException {
 		DatabaseMetaData metaData = con.getMetaData();
 		LOGGER.info("Database driver: {} {}", metaData.getDriverName(), metaData.getDriverVersion());
+	}
+
+	private void selectPersonal(Connection con) {
+		LOGGER.info("Selecting personal:");
+		try (Statement statement = con.createStatement()) {
+			ResultSet resultSet = statement.executeQuery("SELECT persnr, name, ort, aufgabe FROM personal");
+			logResultSet(resultSet);
+		} catch (SQLException e) {
+			LOGGER.error("Failed to select personal", e);
+		}
+	}
+
+	private void selectKunden(Connection con) {
+		LOGGER.info("Selecting kunden:");
+		try (Statement statement = con.createStatement()) {
+			ResultSet resultSet = statement.executeQuery("SELECT * FROM kunde");
+			logResultSet(resultSet);
+		} catch (SQLException e) {
+			LOGGER.error("Failed to select knuden", e);
+		}
+	}
+
+	private void logResultSet(ResultSet resultSet) throws SQLException {
+		ResultSetMetaData metaData = resultSet.getMetaData();
+		int columnCount = metaData.getColumnCount();
+
+		// head labels
+		String pattern = builderFormattingPattern(metaData, columnCount);
+		String formattedLabels = String.format(pattern, (Object[]) getColumnLabels(metaData));
+		String formattedTypes = String.format(pattern, (Object[]) getColumnTypeNames(metaData));
+		LOGGER.info(formattedLabels);
+		LOGGER.info(formattedTypes);
+
+		// separator
+		String separator = buildSeparator(metaData, columnCount);
+		LOGGER.info(separator);
+
+		// body
+		while (resultSet.next()) {
+			String formattedRow = buildFormatatedRow(resultSet, metaData, columnCount);
+			LOGGER.info(formattedRow);
+		}
+	}
+
+	private String builderFormattingPattern(ResultSetMetaData metaData, int columnCount) throws SQLException {
+		StringBuilder patternBuilder = new StringBuilder();
+		for (int currentColumn = 1; currentColumn <= columnCount; currentColumn++) {
+			int colWidth = metaData.getColumnDisplaySize(currentColumn);
+			patternBuilder.append("%-");
+			patternBuilder.append(colWidth);
+			patternBuilder.append("s");
+			if (currentColumn != columnCount) {
+				patternBuilder.append(" | ");
+			}
+		}
+		return patternBuilder.toString();
+	}
+
+	private String[] getColumnLabels(ResultSetMetaData metaData) throws SQLException {
+		String[] result = new String[metaData.getColumnCount()];
+		for (int i = 1; i <= metaData.getColumnCount(); i++) {
+			result[i - 1] = metaData.getColumnLabel(i);
+		}
+		return result;
+	}
+
+	private String[] getColumnTypeNames(ResultSetMetaData metaData) throws SQLException {
+		String[] result = new String[metaData.getColumnCount()];
+		for (int i = 1; i <= metaData.getColumnCount(); i++) {
+			result[i - 1] = metaData.getColumnTypeName(i);
+		}
+		return result;
+	}
+
+	private String buildSeparator(ResultSetMetaData metaData, int columnCount) throws SQLException {
+		StringBuilder builder = new StringBuilder();
+		for (int currentColumn = 1; currentColumn <= columnCount; currentColumn++) {
+			int colWidth = metaData.getColumnDisplaySize(currentColumn);
+			int gap = currentColumn != columnCount ? 3 : 0;
+			String formattingPattern = String.format("%%-%ds", (colWidth + gap));
+			String cellText = String.format(formattingPattern, "-").replace(' ', '-');
+			builder.append(cellText);
+		}
+		return builder.toString();
+	}
+
+	private String buildFormatatedRow(ResultSet resultSet, ResultSetMetaData metaData, int columnCount)
+			throws SQLException {
+		StringBuilder builder = new StringBuilder();
+		for (int currentColumn = 1; currentColumn <= columnCount; currentColumn++) {
+			String formattingPattern;
+			formattingPattern = buildFormattingPatternForCell(metaData, currentColumn);
+			Object cellValue = resultSet.getObject(currentColumn);
+			builder.append(String.format(formattingPattern, cellValue));
+			if (currentColumn != columnCount) {
+				builder.append(" | ");
+			}
+		}
+		return builder.toString();
+	}
+
+	private String buildFormattingPatternForCell(ResultSetMetaData metaData, int currentColumn) throws SQLException {
+		int colWidth = metaData.getColumnDisplaySize(currentColumn);
+		String patternForPattern = isRightBound(currentColumn) ? "%%%d%c" : "%%-%d%c";
+		return String.format(patternForPattern, colWidth, getTypeChar(metaData, currentColumn));
+	}
+
+	private boolean isRightBound(int columnIndex) {
+		return columnIndex == 1;
+	}
+
+	private char getTypeChar(ResultSetMetaData metaData, int currentColumn) throws SQLException {
+		return switch (metaData.getColumnType(currentColumn)) {
+		case Types.DOUBLE, Types.FLOAT, Types.BIGINT -> 'd';
+		default -> 's';
+		};
 	}
 
 	/** @formatter:off
