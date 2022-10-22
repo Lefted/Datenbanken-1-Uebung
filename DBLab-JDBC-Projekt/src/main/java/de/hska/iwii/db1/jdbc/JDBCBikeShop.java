@@ -5,12 +5,12 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
-import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,6 +36,7 @@ public class JDBCBikeShop {
 			INSTANCE.logJDBCDriverInfo(con);
 			INSTANCE.selectPersonal(con);
 			INSTANCE.selectKunden(con);
+			INSTANCE.selectCustomerDelivererRelation(con, "%");
 		} catch (SQLException e) {
 			DBUtils.dumpSQLException(e);
 		} catch (OracleConnectionWrapperException e) {
@@ -169,6 +170,23 @@ public class JDBCBikeShop {
 		case Types.DOUBLE, Types.FLOAT, Types.BIGINT -> 'd';
 		default -> 's';
 		};
+	}
+
+	private void selectCustomerDelivererRelation(Connection con, String customerNameFilter) {
+		try (PreparedStatement statement = con.prepareStatement("""
+				SELECT DISTINCT k.NAME AS kunde, k.NR AS knr, l2.NAME AS lieferant, l2.NR AS lnr FROM KUNDE k\s
+				LEFT OUTER JOIN AUFTRAG a ON a.KUNDNR = k.NR
+				LEFT OUTER JOIN AUFTRAGSPOSTEN a2 ON a.AUFTRNR = a2.AUFTRNR
+				LEFT OUTER JOIN TEILESTAMM t ON t.TEILNR = a2.TEILNR\s
+				LEFT OUTER JOIN LIEFERUNG l ON l.TEILNR = t.TEILNR\s
+				LEFT OUTER JOIN LIEFERANT l2 ON l2.NR = l.LIEFNR
+				WHERE k.NAME LIKE ?""")) {
+			statement.setString(1, customerNameFilter);
+			ResultSet resultSet = statement.executeQuery();
+			logResultSet(resultSet);
+		} catch (SQLException e) {
+			LOGGER.error("Failed to select customer-deliverer-relation", e);
+		}
 	}
 
 	/** @formatter:off
