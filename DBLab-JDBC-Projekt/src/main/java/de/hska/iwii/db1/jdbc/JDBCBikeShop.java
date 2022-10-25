@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -37,6 +38,20 @@ public class JDBCBikeShop {
 			INSTANCE.selectPersonal(con);
 			INSTANCE.selectKunden(con);
 			INSTANCE.selectCustomerDelivererRelation(con, "%");
+
+			INSTANCE.reInitializeDB(con);
+			INSTANCE.insertKunde(con, 7, "Michael Klein", "Ludwig-Erhard-Allee", 76131, "Karlsruhe", false);
+			INSTANCE.selectEverythingFrom(con, "KUNDE");
+			INSTANCE.insertAuftrag(con, 6, new Date(System.currentTimeMillis()), 7);
+			INSTANCE.selectEverythingFrom(con, "AUFTRAG");
+			INSTANCE.insertAuftragsposten(con, 12, 6, 1, 10.45);
+			INSTANCE.selectEverythingFrom(con, "AUFTRAGSPOSTEN");
+
+			INSTANCE.updateSperre(con, 7, true);
+
+			INSTANCE.deleteAuftragsposten(con, 12);
+			INSTANCE.deleteAuftrag(con, 6);
+			INSTANCE.deleteKunde(con, 7);
 		} catch (SQLException e) {
 			DBUtils.dumpSQLException(e);
 		} catch (OracleConnectionWrapperException e) {
@@ -174,7 +189,7 @@ public class JDBCBikeShop {
 
 	private void selectCustomerDelivererRelation(Connection con, String customerNameFilter) {
 		try (PreparedStatement statement = con.prepareStatement("""
-				SELECT DISTINCT k.NAME AS kunde, k.NR AS knr, l2.NAME AS lieferant, l2.NR AS lnr FROM KUNDE k\s
+				SELECT DISTINCT k.NAME AS kunde, k.NR AS knr, l2.NAME AS lieferant, l2.NR AS lnr FROM KUNDE k
 				LEFT OUTER JOIN AUFTRAG a ON a.KUNDNR = k.NR
 				LEFT OUTER JOIN AUFTRAGSPOSTEN a2 ON a.AUFTRNR = a2.AUFTRNR
 				LEFT OUTER JOIN TEILESTAMM t ON t.TEILNR = a2.TEILNR\s
@@ -202,8 +217,7 @@ public class JDBCBikeShop {
      * 					Bike-Datenbank wiederhergestellt werden soll. 
      * @formatter:on
      */
-	@SuppressWarnings("unused")
-	private void reInitializeDB(Connection connection) { // SONAR
+	private void reInitializeDB(Connection connection) {
 		try (Statement statement = connection.createStatement()) {
 			LOGGER.info("Initializing DB");
 			connection.setAutoCommit(true);
@@ -232,6 +246,108 @@ public class JDBCBikeShop {
 					connection.getMetaData().getURL());
 		} catch (Exception e) {
 			LOGGER.error("Failed to reInitialize database", e);
+		}
+	}
+
+	private void insertKunde(Connection con, int kundeNr, String name, String strasse, int plz, String ort,
+			boolean sperre) {
+		LOGGER.info("Inserting Kunde");
+		try (PreparedStatement statement = con.prepareStatement("""
+				INSERT INTO KUNDE (NR, Name, STRASSE, PLZ, ORT, SPERRE)
+				VALUES (?,?,?,?,?,?)""")) {
+			statement.setInt(1, kundeNr);
+			statement.setString(2, name);
+			statement.setString(3, strasse);
+			statement.setInt(4, plz);
+			statement.setString(5, ort);
+			statement.setString(6, sperre ? "1" : "0");
+			statement.execute();
+		} catch (Exception e) {
+			LOGGER.error("Failed to insert kunde", e);
+		}
+	}
+
+	private void insertAuftrag(Connection con, int auftragsNr, Date date, int kundenNr) {
+		LOGGER.info("Inserting Auftrag");
+		try (PreparedStatement statement = con.prepareStatement("""
+				INSERT INTO AUFTRAG (AUFTRNR, DATUM, KUNDNR, PERSNR)
+				VALUES (?,?,?,
+				(SELECT MAX(PERSONAL.PERSNR) FROM PERSONAL))
+				""")) {
+			statement.setInt(1, auftragsNr);
+			statement.setDate(2, date);
+			statement.setInt(3, kundenNr);
+			statement.execute();
+		} catch (Exception e) {
+			LOGGER.error("Failed to insert auftrag", e);
+		}
+	}
+
+	private void insertAuftragsposten(Connection con, int auftragspostenNr, int auftragsNr, int anzahl,
+			double gesamtpreis) {
+		LOGGER.info("Inserting Auftragsposten");
+		try (PreparedStatement statement = con.prepareStatement("""
+				INSERT INTO AUFTRAGSPOSTEN (POSNR, AUFTRNR, TEILNR, ANZAHL, GESAMTPREIS)
+				VALUES (?,?,
+				(SELECT MAX(TEILESTAMM.TEILNR) FROM TEILESTAMM),
+				?,?)""")) {
+			statement.setInt(1, auftragspostenNr);
+			statement.setInt(2, auftragsNr);
+			statement.setInt(3, anzahl);
+			statement.setDouble(4, gesamtpreis);
+			statement.execute();
+		} catch (Exception e) {
+			LOGGER.error("Failed to insert auftrag", e);
+		}
+	}
+
+	private void selectEverythingFrom(Connection con, String tablename) {
+		try (Statement statement = con.createStatement()) {
+			ResultSet resultSet = statement.executeQuery(String.format("SELECT * FROM %s", tablename));
+			logResultSet(resultSet);
+		} catch (Exception e) {
+			LOGGER.error("Failed to select from {}", tablename, e);
+		}
+	}
+
+	private void updateSperre(Connection con, int kundeNr, boolean sperre) {
+		LOGGER.info("Updating sperre");
+		try (PreparedStatement statement = con.prepareStatement("UPDATE KUNDE SET SPERRE = ? WHERE KUNDE.NR = ?")) {
+			statement.setString(1, sperre ? "1" : "0");
+			statement.setInt(2, kundeNr);
+			statement.execute();
+		} catch (Exception e) {
+			LOGGER.error("Failed to update sperre", e);
+		}
+	}
+
+	private void deleteAuftragsposten(Connection con, int auftragspostenNr) {
+		LOGGER.info("Deleting auftragsposten");
+		try (PreparedStatement statement = con.prepareStatement("DELETE FROM Auftragsposten WHERE POSNR = ?")) {
+			statement.setInt(1, auftragspostenNr);
+			statement.execute();
+		} catch (Exception e) {
+			LOGGER.error("Failed to delete auftragsposten", e);
+		}
+	}
+
+	private void deleteAuftrag(Connection con, int auftragsNr) {
+		LOGGER.info("Deleting auftrag");
+		try (PreparedStatement statement = con.prepareStatement("DELETE FROM Auftrag WHERE AUFTRNR = ?")) {
+			statement.setInt(1, auftragsNr);
+			statement.execute();
+		} catch (Exception e) {
+			LOGGER.error("Failed to delete auftrag", e);
+		}
+	}
+
+	private void deleteKunde(Connection con, int kundeNr) {
+		LOGGER.info("Deleting kunde");
+		try (PreparedStatement statement = con.prepareStatement("DELETE FROM Kunde WHERE NR = ?")) {
+			statement.setInt(1, kundeNr);
+			statement.execute();
+		} catch (Exception e) {
+			LOGGER.error("Failed to delete kunde", e);
 		}
 	}
 }
