@@ -1,6 +1,8 @@
 package de.hska.iwii.db1.jpa;
 
 import java.util.Date;
+import java.util.List;
+import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -11,11 +13,15 @@ import de.hska.iwii.db1.jpa.model.Kunde;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Persistence;
+import jakarta.persistence.TypedQuery;
 
 public class JPAApplication {
+	private static final Logger LOGGER = Logger.getLogger("JPAApplication");
+
 	private EntityManagerFactory entityManagerFactory;
 
 	public JPAApplication() {
+		LOGGER.setLevel(Level.INFO);
 		Logger.getLogger("org.hibernate").setLevel(Level.ALL);
 		entityManagerFactory = Persistence.createEntityManagerFactory("DB1");
 	}
@@ -74,6 +80,12 @@ public class JPAApplication {
 
 		
 		em.getTransaction().commit();
+		
+		// alle Buchungen eines Kunden anhand des Nachnamens auslesen
+		TypedQuery<Buchung> query = em.createQuery("FROM Buchung b JOIN b.kunde k WHERE k.nachname = :nachname", Buchung.class);
+		query.setParameter("nachname", "maier");
+		List<Buchung> buchungen = query.getResultList();
+		buchungen.stream().map(Object::toString).forEach(LOGGER::info);
 		
         em.close();
         entityManagerFactory.close();
