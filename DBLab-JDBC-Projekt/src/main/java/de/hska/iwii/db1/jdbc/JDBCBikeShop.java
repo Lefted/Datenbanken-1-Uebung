@@ -217,7 +217,7 @@ public class JDBCBikeShop {
      * 					Bike-Datenbank wiederhergestellt werden soll. 
      * @formatter:on
      */
-	private void reInitializeDB(Connection connection) {
+	public void reInitializeDB(Connection connection) {
 		try (Statement statement = connection.createStatement()) {
 			LOGGER.info("Initializing DB");
 			connection.setAutoCommit(true);
@@ -349,5 +349,9 @@ public class JDBCBikeShop {
 		} catch (Exception e) {
 			LOGGER.error("Failed to delete kunde", e);
 		}
+	}
+
+	public static JDBCBikeShop getInstance() {
+		return INSTANCE;
 	}
 }
